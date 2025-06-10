@@ -17,10 +17,20 @@ export async function POST(request) {
     }
 
     // Always use /tmp to match Vercel's read/write constraints
-    const tempDir = "/tmp";
+    const isProd = process.env.NODE_ENV === "production";
+    const tempDir = isProd ? "/tmp" : path.join(process.cwd(), "temp");
+
+    try {
+      await fs.access(tempDir);
+    } catch {
+      await fs.mkdir(tempDir, { recursive: true });
+    }
 
     // Generate a safe, unique filename
-    const uniqueName = `${crypto.randomUUID()}_${image.name.replace(/\s/g, "_")}`;
+    const uniqueName = `${crypto.randomUUID()}_${image.name.replace(
+      /\s/g,
+      "_"
+    )}`;
     const tempPath = path.join(tempDir, uniqueName);
 
     // Save the uploaded image temporarily
@@ -84,12 +94,7 @@ export async function POST(request) {
 
       pythonProcess.on("error", async (err) => {
         await cleanup();
-        resolve(
-          NextResponse.json(
-            { error: err.message },
-            { status: 500 }
-          )
-        );
+        resolve(NextResponse.json({ error: err.message }, { status: 500 }));
       });
     });
   } catch (error) {
