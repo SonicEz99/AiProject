@@ -31,28 +31,32 @@ export default function Home() {
   };
 
   const processImage = async (file) => {
-    setImage(file);
-    setLoading(true);
-    setResult("");
+  setImage(file);
+  setLoading(true);
+  setResult("");
 
-    const formData = new FormData();
-    formData.append("image", file);
+  const formData = new FormData();
+  formData.append("image", file);
 
-    try {
-      const response = await fetch("/api/detect", {
-        method: "POST",
-        body: formData,
-      });
+  try {
+    const response = await fetch("https://ai-model-api-d5dm.onrender.com/detect", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.NEXT_PUBLIC_X_API_KEY, // Replace with your actual API key
+      },
+      body: formData,
+    });
 
-      const data = await response.json();
-      setResult(data.result);
-    } catch (error) {
-      console.error("Error:", error);
-      setResult("Error processing image");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const data = await response.json();
+    setResult(data.message); // Because your API returns { message: "..." }
+  } catch (error) {
+    console.error("Error:", error);
+    setResult("Error processing image");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleDragOver = (e) => {
     e.preventDefault();
