@@ -13,6 +13,13 @@ export async function POST(request) {
       ? '/tmp'
       : path.join(process.cwd(), 'temp');
     
+    // Ensure temp directory exists
+    try {
+      await fs.access(tempDir);
+    } catch {
+      await fs.mkdir(tempDir, { recursive: true });
+    }
+    
     // Save the uploaded image temporarily
     const bytes = await image.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -39,8 +46,13 @@ export async function POST(request) {
 
       pythonProcess.on('close', async (code) => {
         try {
-          // Clean up temp file
-          await fs.unlink(tempPath);
+          // Check if file exists before trying to delete it
+          try {
+            await fs.access(tempPath);
+            await fs.unlink(tempPath);
+          } catch (unlinkError) {
+            console.warn(`Failed to delete temp file: ${unlinkError.message}`);
+          }
           
           if (code === 0) {
             const jsonResult = JSON.parse(result.trim());
@@ -52,7 +64,7 @@ export async function POST(request) {
           }
         } catch (error) {
           console.error('Error parsing Python output:', result);
-          console.log(error);
+          console.error(error);
           resolve(NextResponse.json({ 
             error: 'Invalid output from Python script' 
           }, { status: 500 }));
@@ -60,7 +72,12 @@ export async function POST(request) {
       });
 
       pythonProcess.on('error', async (err) => {
-        await fs.unlink(tempPath).catch(console.error);
+        try {
+          await fs.access(tempPath);
+          await fs.unlink(tempPath);
+        } catch (unlinkError) {
+          console.warn(`Failed to delete temp file: ${unlinkError.message}`);
+        }
         resolve(NextResponse.json({ 
           error: err.message 
         }, { status: 500 }));
