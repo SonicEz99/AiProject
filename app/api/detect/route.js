@@ -8,9 +8,10 @@ export async function POST(request) {
     const data = await request.formData();
     const image = data.get('image');
     
-    // Ensure temp directory exists
-    const tempDir = path.join(process.cwd(), 'temp');
-    await fs.mkdir(tempDir, { recursive: true });
+    // Use /tmp in production, local temp folder in development
+    const tempDir = process.env.NODE_ENV === 'production'
+      ? '/tmp'
+      : path.join(process.cwd(), 'temp');
     
     // Save the uploaded image temporarily
     const bytes = await image.arrayBuffer();
