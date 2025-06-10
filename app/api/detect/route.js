@@ -2,30 +2,30 @@ import { NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 import { promises as fs } from "fs";
+import crypto from "crypto";
 
 export async function POST(request) {
   try {
     const data = await request.formData();
     const image = data.get("image");
 
-    // Use /tmp in production, local temp folder in development
-    const tempDir =
-      process.env.NODE_ENV === "production"
-        ? "/tmp"
-        : path.join(process.cwd(), "temp");
-
-    // Ensure temp directory exists
-    try {
-      await fs.access(tempDir);
-    } catch {
-      await fs.mkdir(tempDir, { recursive: true });
+    if (!image || typeof image.arrayBuffer !== "function") {
+      return NextResponse.json(
+        { error: "Invalid or missing image" },
+        { status: 400 }
+      );
     }
+
+    // Always use /tmp to match Vercel's read/write constraints
+    const tempDir = "/tmp";
+
+    // Generate a safe, unique filename
+    const uniqueName = `${crypto.randomUUID()}_${image.name.replace(/\s/g, "_")}`;
+    const tempPath = path.join(tempDir, uniqueName);
 
     // Save the uploaded image temporarily
     const bytes = await image.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    const tempPath = path.join(tempDir, image.name);
     await fs.writeFile(tempPath, buffer);
 
     // Run Python script
@@ -45,25 +45,27 @@ export async function POST(request) {
         console.error(`Python Error: ${data}`);
       });
 
-      pythonProcess.on("close", async (code) => {
+      const cleanup = async () => {
         try {
-          // Check if file exists before trying to delete it
-          try {
-            await fs.access(tempPath);
-            await fs.unlink(tempPath);
-          } catch (unlinkError) {
-            console.warn(`Failed to delete temp file: ${unlinkError.message}`);
+          await fs.unlink(tempPath);
+        } catch (err) {
+          if (err.code !== "ENOENT") {
+            console.warn(`Failed to delete temp file: ${err.message}`);
           }
+        }
+      };
 
+      pythonProcess.on("close", async (code) => {
+        await cleanup();
+
+        try {
           if (code === 0) {
             const jsonResult = JSON.parse(result.trim());
             resolve(NextResponse.json(jsonResult));
           } else {
             resolve(
               NextResponse.json(
-                {
-                  error: "Python script failed",
-                },
+                { error: "Python script failed" },
                 { status: 500 }
               )
             );
@@ -73,9 +75,7 @@ export async function POST(request) {
           console.error(error);
           resolve(
             NextResponse.json(
-              {
-                error: "Invalid output from Python script",
-              },
+              { error: "Invalid output from Python script" },
               { status: 500 }
             )
           );
@@ -83,18 +83,10 @@ export async function POST(request) {
       });
 
       pythonProcess.on("error", async (err) => {
-        try {
-          await fs.unlink(tempPath);
-        } catch (unlinkError) {
-          if (unlinkError.code !== "ENOENT") {
-            console.warn(`Failed to delete temp file: ${unlinkError.message}`);
-          }
-        }
+        await cleanup();
         resolve(
           NextResponse.json(
-            {
-              error: err.message,
-            },
+            { error: err.message },
             { status: 500 }
           )
         );
@@ -103,9 +95,7 @@ export async function POST(request) {
   } catch (error) {
     console.error("Error:", error);
     return NextResponse.json(
-      {
-        error: "Failed to process image",
-      },
+      { error: "Failed to process image" },
       { status: 500 }
     );
   }
